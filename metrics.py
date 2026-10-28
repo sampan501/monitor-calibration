@@ -63,15 +63,18 @@ def audit(y, p, alpha=0.02, reps=500, seed=0):
     return tpr, fpr
 
 
-def boot_catch(y, ps, alpha, reps=2000, seed=0):
-    """Return catch rates of each model in ps over paired bootstrap resamples stratified by label."""
+def boot(y, ps, nas, alpha, reps=2000, seed=0):
+    """Return catch rate, ECE, and Brier of each model over paired bootstrap resamples stratified by label."""
     rs = np.random.RandomState(seed)
     i1, i0 = np.flatnonzero(y == 1), np.flatnonzero(y == 0)
-    out = np.empty((reps, len(ps)))
+    out = {k: np.empty((reps, len(ps))) for k in ("catch", "ece", "brier")}
     for r in range(reps):
         a, b = rs.choice(i1, len(i1)), rs.choice(i0, len(i0))
-        for j, p in enumerate(ps):
-            out[r, j] = np.mean(p[a] > conformal_threshold(p[b], alpha))
+        i = np.concatenate([a, b])
+        for j, (p, na) in enumerate(zip(ps, nas)):
+            out["catch"][r, j] = np.mean(p[a] > conformal_threshold(p[b], alpha))
+            k = i[~na[i]]  # calibration leaves out non-answers
+            out["ece"][r, j], out["brier"][r, j] = ece(y[k], p[k]), brier(y[k], p[k])
     return out
 
 

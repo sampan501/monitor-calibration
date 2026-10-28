@@ -20,7 +20,7 @@ This repo checks how well different kinds of model report confidence on one safe
 - Catch rate at alpha: if the threshold is set so that about alpha of benign prompts get flagged (the audit budget), what share of harmful prompts is flagged? The threshold is a split conformal quantile of benign scores.
 - Audit catch rate spread: the 5th to 95th percentile of the held-out catch rate over 500 random half splits, where one half sets the threshold and the other half is scored.
 - Share of splits with FPR above alpha: how often the realized false positive rate on the held-out half goes over the budget.
-- Pairwise catch rate differences: a paired bootstrap over prompts. Each of 2,000 resamples draws the toxic and the benign prompts with replacement, separately, and uses the same drawn prompts for every model. Each model's 2% FPR conformal threshold is set again on the resampled benign prompts. For every pair, the second table gives the full-sample difference in catch rate, the 2.5 to 97.5 percentile interval of the bootstrap differences, and a two-sided bootstrap p-value with Holm correction across all pairs. With 2,000 resamples and 15 pairs the smallest possible Holm p-value is 0.015.
+- Pairwise differences in catch rate, ECE, and Brier: a paired bootstrap over prompts. Each of 2,000 resamples draws the toxic and the benign prompts with replacement, separately, and uses the same drawn prompts for every model. Each model's 2% FPR conformal threshold is set again on the resampled benign prompts. ECE and Brier are computed on the resampled prompts each model answered. For every pair and each of the three measures, the second table gives the full-sample difference, the 2.5 to 97.5 percentile interval of the bootstrap differences, and a two-sided bootstrap p-value with Holm correction across the 15 pairs of that measure. With 2,000 resamples and 15 pairs the smallest possible Holm p-value is 0.015.
 - Repeat SD: the mean per-prompt standard deviation across repeated calls, for models that are not deterministic.
 
 A permutation test of each catch rate against a monitor with no signal, which permutes labels and sets the threshold again inside each permutation, gives p = 0.001 for every model, the smallest value 1,000 permutations allow.
@@ -76,23 +76,23 @@ These results were run on 2026-10-28 on 2,000 prompts from the filtered test spl
 | qwen3.5-9b | token | 2000 (145) | 0 | 0.959 | 0.0392 | 0.0195 | 0.5968 | 0.0053 | 0.531 | 0.413 to 0.606 | 0.460 | n/a |
 | tfidf-logreg | native | 2000 (145) | 0 | 0.912 | 0.0451 | 0.0480 | 0.7197 | 0.0125 | 0.566 | 0.479 to 0.641 | 0.430 | n/a |
 
-| model A | model B | catch A - B | 95% interval | Holm p |
-|---|---|---|---|---|
-| gemini-3.1-pro | qwen3.5-9b | +0.262 | +0.166 to +0.393 | 0.015 |
-| gemini-3.1-pro | tfidf-logreg | +0.228 | +0.110 to +0.352 | 0.028 |
-| jev | qwen3.5-9b | +0.179 | +0.090 to +0.310 | 0.028 |
-| gemini-3.1-pro | gpt-5.4 | +0.193 | +0.083 to +0.359 | 0.060 |
-| gemini-3.1-pro | claude-opus-5.5 | +0.110 | +0.028 to +0.248 | 0.143 |
-| jev | gpt-5.4 | +0.110 | +0.014 to +0.262 | 0.240 |
-| jev | tfidf-logreg | +0.145 | +0.021 to +0.297 | 0.324 |
-| claude-opus-5.5 | qwen3.5-9b | +0.152 | +0.000 to +0.297 | 0.440 |
-| claude-opus-5.5 | gpt-5.4 | +0.083 | -0.048 to +0.234 | 1.000 |
-| jev | claude-opus-5.5 | +0.028 | -0.069 to +0.186 | 1.000 |
-| claude-opus-5.5 | tfidf-logreg | +0.117 | -0.048 to +0.255 | 1.000 |
-| gemini-3.1-pro | jev | +0.083 | -0.021 to +0.172 | 1.000 |
-| gpt-5.4 | qwen3.5-9b | +0.069 | -0.083 to +0.207 | 1.000 |
-| gpt-5.4 | tfidf-logreg | +0.034 | -0.152 to +0.186 | 1.000 |
-| tfidf-logreg | qwen3.5-9b | +0.034 | -0.103 to +0.186 | 1.000 |
+| model A | model B | catch A - B | 95% interval | Holm p | ECE A - B | 95% interval | Holm p | Brier A - B | 95% interval | Holm p |
+|---|---|---|---|---|---|---|---|---|---|---|
+| gemini-3.1-pro | qwen3.5-9b | +0.262 | +0.166 to +0.393 | 0.015 | +0.0076 | -0.0037 to +0.0175 | 1.000 | -0.0110 | -0.0167 to -0.0049 | 0.015 |
+| jev | qwen3.5-9b | +0.179 | +0.090 to +0.310 | 0.028 | -0.0008 | -0.0078 to +0.0091 | 1.000 | -0.0123 | -0.0158 to -0.0084 | 0.015 |
+| gemini-3.1-pro | tfidf-logreg | +0.228 | +0.110 to +0.352 | 0.028 | -0.0208 | -0.0313 to -0.0097 | 0.015 | -0.0169 | -0.0234 to -0.0098 | 0.015 |
+| gemini-3.1-pro | gpt-5.4 | +0.193 | +0.083 to +0.359 | 0.060 | -0.0059 | -0.0161 to +0.0022 | 0.959 | -0.0127 | -0.0197 to -0.0058 | 0.021 |
+| gemini-3.1-pro | claude-opus-5.5 | +0.110 | +0.028 to +0.248 | 0.143 | +0.0039 | -0.0053 to +0.0094 | 1.000 | +0.0038 | -0.0002 to +0.0084 | 0.355 |
+| jev | gpt-5.4 | +0.110 | +0.014 to +0.262 | 0.240 | -0.0144 | -0.0215 to -0.0038 | 0.099 | -0.0140 | -0.0198 to -0.0083 | 0.015 |
+| jev | tfidf-logreg | +0.145 | +0.021 to +0.297 | 0.324 | -0.0293 | -0.0365 to -0.0172 | 0.015 | -0.0182 | -0.0232 to -0.0125 | 0.015 |
+| claude-opus-5.5 | qwen3.5-9b | +0.152 | +0.000 to +0.297 | 0.440 | +0.0037 | -0.0041 to +0.0135 | 1.000 | -0.0148 | -0.0191 to -0.0104 | 0.015 |
+| claude-opus-5.5 | gpt-5.4 | +0.083 | -0.048 to +0.234 | 1.000 | -0.0099 | -0.0189 to +0.0015 | 0.736 | -0.0165 | -0.0233 to -0.0101 | 0.015 |
+| jev | claude-opus-5.5 | +0.028 | -0.069 to +0.186 | 1.000 | -0.0045 | -0.0118 to +0.0034 | 1.000 | +0.0025 | -0.0016 to +0.0067 | 0.860 |
+| gemini-3.1-pro | jev | +0.083 | -0.021 to +0.172 | 1.000 | +0.0084 | -0.0019 to +0.0146 | 0.959 | +0.0013 | -0.0035 to +0.0064 | 1.000 |
+| gpt-5.4 | qwen3.5-9b | +0.069 | -0.083 to +0.207 | 1.000 | +0.0136 | +0.0026 to +0.0243 | 0.144 | +0.0017 | -0.0057 to +0.0093 | 1.000 |
+| claude-opus-5.5 | tfidf-logreg | +0.117 | -0.048 to +0.255 | 1.000 | -0.0248 | -0.0324 to -0.0125 | 0.024 | -0.0207 | -0.0252 to -0.0160 | 0.015 |
+| gpt-5.4 | tfidf-logreg | +0.034 | -0.152 to +0.186 | 1.000 | -0.0149 | -0.0259 to -0.0028 | 0.120 | -0.0042 | -0.0120 to +0.0047 | 0.951 |
+| tfidf-logreg | qwen3.5-9b | +0.034 | -0.103 to +0.186 | 1.000 | +0.0285 | +0.0164 to +0.0376 | 0.015 | +0.0059 | +0.0011 to +0.0108 | 0.084 |
 
 ![Reliability](figures/reliability.png)
 ![Risk-coverage](figures/risk_coverage.png)
@@ -102,7 +102,7 @@ The ranking metric and the catch rate order the models differently. Gemini has t
 
 The top models cannot be separated at this sample size. Gemini, Jev, and Claude differ by at most 0.110 in catch rate, and no pair among them has a Holm p-value below 0.14. Only three pairs fall below 0.05 after correction: Gemini over Qwen (Holm p = 0.015, the smallest value 2,000 resamples allow), Gemini over tfidf-logreg (0.028), and Jev over Qwen (0.028).
 
-Jev has the lowest ECE (0.0187), just below Qwen (0.0195) and Claude (0.0232), while Claude has the lowest Brier score (0.0244 against 0.0269 for Jev). The bootstrap covers only catch rates, so these calibration differences have no interval.
+No model is clearly best calibrated. Jev has the lowest ECE (0.0187) and Claude the lowest Brier score (0.0244), but the bootstrap separates neither from the closest model: Jev against Qwen on ECE differs by -0.0008 (interval -0.0078 to +0.0091, Holm p = 1.000), and Jev against Claude on Brier by +0.0025 (interval -0.0016 to +0.0067, Holm p = 0.860). The clear calibration result is at the bottom: tfidf-logreg has a higher ECE than Gemini, Jev, Claude, and Qwen (Holm p at most 0.024).
 
 Stated probabilities are coarse. On the prompts each model answered, Gemini used 13 distinct values, GPT-5.4 used 21, and Claude used 40, against 177 for Jev and 955 for Qwen's token probabilities. Many prompts share the same score, which leaves the order within those groups to chance in AURC and puts the conformal threshold at a tie.
 

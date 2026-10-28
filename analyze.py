@@ -86,15 +86,27 @@ def summarize(runs, modes, a, rdir, fdir):
         models[name] = (y, p, np.array([i in na for i in ids]))
         aud[name] = metrics.audit(y, p, a.alpha, a.reps)
     names = list(models)
-    catch = {k: metrics.catch_rate(y, p, a.alpha) for k, (y, p, _) in models.items()}
+    full = {
+        "catch": [metrics.catch_rate(y, p, a.alpha) for y, p, _ in models.values()],
+        "ece": [metrics.ece(y[~na], p[~na]) for y, p, na in models.values()],
+        "brier": [metrics.brier(y[~na], p[~na]) for y, p, na in models.values()],
+    }
+    catch = dict(zip(names, full["catch"]))
     # Every model is scored on the same resampled prompts; each pair lists the higher catch rate first.
-    boot = metrics.boot_catch(models[names[0]][0], [models[k][1] for k in names], a.alpha, a.boot)
-    pairs = []
-    for i in range(len(names)):
-        for j in range(i + 1, len(names)):
-            u, v = (i, j) if catch[names[i]] >= catch[names[j]] else (j, i)
-            pairs.append((names[u], names[v]) + metrics.paired(boot[:, u] - boot[:, v]))
-    adj = metrics.holm([q[4] for q in pairs]) if pairs else []
+    y0 = models[names[0]][0]
+    boot = metrics.boot(y0, [m[1] for m in models.values()], [m[2] for m in models.values()], a.alpha, a.boot)
+    pairs = [
+        (i, j) if full["catch"][i] >= full["catch"][j] else (j, i)
+        for i in range(len(names))
+        for j in range(i)
+    ]
+    cmp = {}
+    for k in full:
+        st = [metrics.paired(boot[k][:, u] - boot[k][:, v]) for u, v in pairs]
+        cmp[k] = [
+            (full[k][u] - full[k][v], lo, hi, q)
+            for (u, v), (lo, hi, _), q in zip(pairs, st, metrics.holm([s[2] for s in st]))
+        ]
 
     head = [
         "model",
@@ -134,10 +146,17 @@ def summarize(runs, modes, a, rdir, fdir):
             "n/a" if np.isnan(s) else "{:.4f}".format(s),
         ]
         lines.append("| " + " | ".join(cells) + " |")
-    lines += ["", "| model A | model B | catch A - B | 95% interval | Holm p |", "|---|---|---|---|---|"]
-    for (m1, m2, lo, hi, _), q in sorted(zip(pairs, adj), key=lambda t: t[1]):
-        d = catch[m1] - catch[m2]
-        lines.append("| {} | {} | {:+.3f} | {:+.3f} to {:+.3f} | {:.3f} |".format(m1, m2, d, lo, hi, q))
+    head = ["model A", "model B"]
+    for k in ("catch", "ECE", "Brier"):
+        head += ["{} A - B".format(k), "95% interval", "Holm p"]
+    lines += ["", "| " + " | ".join(head) + " |", "|" + "---|" * len(head)]
+    for n in sorted(range(len(pairs)), key=lambda n: cmp["catch"][n][3]):
+        u, v = pairs[n]
+        cells = [names[u], names[v]]
+        for k, f in (("catch", "{:+.3f}"), ("ece", "{:+.4f}"), ("brier", "{:+.4f}")):
+            d, lo, hi, q = cmp[k][n]
+            cells += [f.format(d), "{} to {}".format(f.format(lo), f.format(hi)), "{:.3f}".format(q)]
+        lines.append("| " + " | ".join(cells) + " |")
     table = "\n".join(lines) + "\n"
     print(table)
     os.makedirs(rdir, exist_ok=True)
