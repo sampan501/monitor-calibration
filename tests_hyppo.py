@@ -33,21 +33,25 @@ def subcats(y, sub, least=20):
 
 def ksample(*xs):
     """Return the Dcorr k-sample statistic and permutation p-value."""
-    # auto=False keeps the permutation test; with auto=True hyppo switches to a chi-square
-    # approximation for n > 20 and ignores reps and random_state.
-    return KSample("Dcorr").test(*map(col, xs), reps=REPS, auto=False, random_state=SEED)
+    # With n > 20, auto=True uses the chi-square approximation, so reps and random_state only apply below that.
+    return KSample("Dcorr").test(*map(col, xs), reps=REPS, random_state=SEED)
 
 
 def dcorr(x, y):
     """Return the distance correlation of two score vectors and its permutation p-value."""
-    return Dcorr().test(col(x), col(y), reps=REPS, auto=False, random_state=SEED)
+    return Dcorr().test(col(x), col(y), reps=REPS, random_state=SEED)
+
+
+def fp(p):
+    """Return a p-value to three decimals, or <0.001."""
+    return "<0.001" if p < 0.0005 else "{:.3f}".format(p)
 
 
 def holm_rows(names, res):
     """Return table rows of name, statistic, p, and Holm p across names."""
     q = metrics.holm([r[1] for r in res])
     return [
-        [n, "{:.4f}".format(s), "{:.3f}".format(p), "{:.3f}".format(h)] for n, (s, p), h in zip(names, res, q)
+        [n, "{:.4f}".format(s), fp(p), fp(h)] for n, (s, p), h in zip(names, res, q)
     ]
 
 
@@ -91,7 +95,7 @@ def report(models, adv, sub, bt, alpha, fdir):
             names[i],
             names[j],
             "{:.3f}".format(s),
-            "{:.3f}".format(b),
+            fp(b),
             "{:+.3f}".format(pearsonr(ps[i], ps[j])[0]),
         ]
         for (i, j), (s, _), b in zip(pairs, res, q)

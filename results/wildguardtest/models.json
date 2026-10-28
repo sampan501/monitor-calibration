@@ -1,0 +1,9 @@
+{
+  "tfidf-logreg": {
+    "dataset": "wildguardtest",
+    "date": "2026-10-28",
+    "mode": "native",
+    "model": "tfidf-logreg",
+    "scorer": "baseline"
+  }
+}
