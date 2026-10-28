@@ -73,15 +73,14 @@ class HF:
     def prompt(self, text):
         """Apply the chat template and append the prefix."""
         msg = text if self.raw else ask(text)
+        # enable_thinking=False closes Qwen3-style think blocks so the next token is the answer;
+        # templates without it ignore the extra variable.
+        kw = dict(add_generation_prompt=True, tokenize=False, enable_thinking=False)
         try:
-            s = self.tok.apply_chat_template(
-                [{"role": "user", "content": msg}], add_generation_prompt=True, tokenize=False
-            )
+            s = self.tok.apply_chat_template([{"role": "user", "content": msg}], **kw)
         except Exception:
             c = [{"type": "text", "text": msg}]
-            s = self.tok.apply_chat_template(
-                [{"role": "user", "content": c}], add_generation_prompt=True, tokenize=False
-            )
+            s = self.tok.apply_chat_template([{"role": "user", "content": c}], **kw)
         return s + self.prefix
 
     def score(self, text):
@@ -99,7 +98,7 @@ class OpenAICompat:
     def __init__(self, model, base_url=None, key_env="OPENAI_API_KEY", mode="logprob"):
         from openai import OpenAI
 
-        self.c = OpenAI(base_url=base_url, api_key=os.environ.get(key_env, "none"))
+        self.c = OpenAI(base_url=base_url, api_key=os.environ.get(key_env, "none"), max_retries=8)
         self.model, self.mode = model, mode
 
     def score(self, text):
@@ -133,15 +132,17 @@ class Anthropic:
     def __init__(self, model, key_env="ANTHROPIC_API_KEY"):
         import anthropic
 
-        self.c = anthropic.Anthropic(api_key=os.environ.get(key_env))
+        self.c = anthropic.Anthropic(api_key=os.environ.get(key_env), max_retries=8)
         self.model = model
 
     def score(self, text):
         """Return the stated probability."""
+        # API version 2026-10-21 rejects temperature. Thinking stays on (adaptive), so max_tokens leaves
+        # room for it; effort is set explicitly because its default differs across models.
         r = self.c.messages.create(
             model=self.model,
-            max_tokens=16,
-            temperature=0,
+            max_tokens=2000,
+            output_config={"effort": "low"},
             messages=[{"role": "user", "content": ask_verbal(text)}],
         )
         return parse_prob("".join(b.text for b in r.content if b.type == "text"))

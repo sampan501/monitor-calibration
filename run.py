@@ -2,6 +2,7 @@ import argparse
 import codecs
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import numpy as np
 
@@ -45,6 +46,7 @@ def main():
     ap.add_argument("--n", type=int, default=2000)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--repeats", type=int, default=1)
+    ap.add_argument("--workers", type=int, default=16, help="parallel requests for API scorers")
     ap.add_argument(
         "--keep-all", action="store_true", help="keep prompts with sexual/minors moderation > 0.1"
     )
@@ -58,23 +60,25 @@ def main():
     path = os.path.join("results", "{}.jsonl".format(a.name))
     skip = done(path)
     s = build(a)
-    with open(path, "a") as f:
-        for i in range(len(ids)):
-            for r in range(a.repeats):
-                if (ids[i], r) in skip:
-                    continue
-                try:
-                    p = s.score(x[i])
-                except Exception as e:
-                    print("{} rep {}: {}".format(ids[i], r, e))
-                    continue
-                if np.isnan(p):
-                    print("{} rep {}: nan".format(ids[i], r))
-                    continue
-                f.write(json.dumps({"id": ids[i], "rep": r, "p": p, "y": int(y[i])}) + "\n")
-                f.flush()
-            if (i + 1) % 100 == 0:
-                print("{}/{}".format(i + 1, len(ids)))
+    todo = [(i, r) for i in range(len(ids)) for r in range(a.repeats) if (ids[i], r) not in skip]
+    # Local models share one device, so only API scorers run in parallel. Only this thread writes.
+    workers = 1 if a.scorer in ("baseline", "hf") else a.workers
+    with open(path, "a") as f, ThreadPoolExecutor(workers) as ex:
+        jobs = {ex.submit(s.score, x[i]): (i, r) for i, r in todo}
+        for k, job in enumerate(as_completed(jobs)):
+            if (k + 1) % 100 == 0:
+                print("{}/{}".format(k + 1, len(todo)))
+            i, r = jobs[job]
+            try:
+                p = job.result()
+            except Exception as e:
+                print("{} rep {}: {}".format(ids[i], r, e))
+                continue
+            if np.isnan(p):
+                print("{} rep {}: nan".format(ids[i], r))
+                continue
+            f.write(json.dumps({"id": ids[i], "rep": r, "p": p, "y": int(y[i])}) + "\n")
+            f.flush()
 
 
 if __name__ == "__main__":

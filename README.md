@@ -6,7 +6,7 @@ This repo checks how well different kinds of model report confidence on one safe
 
 - A baseline: TF-IDF features with logistic regression, fit on the ToxicChat train split.
 - Local open-weight models through Hugging Face transformers. The probability is P(yes) / (P(yes) + P(no)) from the next-token distribution. Safety classifiers such as Llama Guard can be read the same way with their own answer words.
-- API models through an OpenAI-compatible client, which also covers Ollama and vLLM servers. These use token logprobs by default, or a stated probability with `--mode verbal`.
+- API models through an OpenAI-compatible client, which also covers Gemini, Ollama, and vLLM servers. These use token logprobs by default, or a stated probability with `--mode verbal`. The commercial runs below all use `--mode verbal`, since current OpenAI models return only the top token's logprob and Gemini returns none.
 - Models that state a probability only: Claude through the Anthropic SDK, and Jev through the TypeSafe SDK.
 
 ## Metrics
@@ -29,7 +29,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-API keys are read from the environment: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and `TYPESAFE_API_KEY`. Use `--api-key-env` to read a different variable. Llama Guard and some other Hugging Face models need you to accept their license and log in with `huggingface-cli login`.
+API keys are read from the environment: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY` (through `--api-key-env`), and `TYPESAFE_API_KEY`. Use `--api-key-env` to read a different variable. Llama Guard and some other Hugging Face models need you to accept their license and log in with `huggingface-cli login`.
 
 ## Scoring
 
@@ -37,13 +37,16 @@ Each run scores the same test sample (`--n 2000 --seed 0` by default) and append
 
 ```
 python run.py --scorer baseline --name tfidf-logreg
-python run.py --scorer hf --model Qwen/Qwen2.5-7B-Instruct --name qwen2.5-7b
+python run.py --scorer hf --model Qwen/Qwen3.5-9B --name qwen3.5-9b
 python run.py --scorer hf --model meta-llama/Llama-Guard-3-1B --raw --yes unsafe --no safe --prefix '\n\n' --name llama-guard-3-1b
-python run.py --scorer openai --model gpt-4.1-mini --name gpt-4.1-mini
+python run.py --scorer openai --model gpt-5.4-2026-03-05 --mode verbal --name gpt-5.4
+python run.py --scorer openai --model gemini-3.1-pro-preview --base-url https://generativelanguage.googleapis.com/v1beta/openai/ --api-key-env GOOGLE_API_KEY --mode verbal --name gemini-3.1-pro
 python run.py --scorer openai --model llama3.1 --base-url http://localhost:11434/v1 --name llama3.1-ollama
-python run.py --scorer anthropic --model <model-id> --name claude
+python run.py --scorer anthropic --model claude-opus-5-5 --name claude-opus-5.5
 python run.py --scorer jev --name jev --repeats 3
 ```
+
+Model versions are pinned to what was current on 2026-10-28 rather than to "latest" aliases: Qwen3.5-9B at Hugging Face commit c202236 (the newest Qwen that fits in 36 GB; Qwen3.8 starts at 27B), the gpt-5.4 snapshot from 2026-03-05, Claude Opus 5.5, and Gemini 3.1 Pro preview (what `gemini-pro-latest` resolved to that day). Jev has no dated name, so `jev-latest` was the release of 2026-09-10. The local model reads the next token with thinking turned off. Claude runs with adaptive thinking at effort low.
 
 ## Analysis
 
@@ -59,6 +62,6 @@ This reads every `results/*.jsonl` file, averages repeats per prompt, and keeps 
 - A stated probability and a token probability mean different things. A token probability comes from the model's output distribution, while a stated probability is text the model writes. The two can differ in calibration even for the same model.
 - With 2,000 prompts at about 7% prevalence, each half split has about 70 harmful prompts. That is why the held-out catch rate has a wide spread.
 - Split conformal thresholds control the false positive rate on average over splits, not on every split. Some splits will go over alpha, and the table reports how often.
-- By default the loader drops prompts whose OpenAI moderation score for sexual/minors is above 0.1 (21 of 5,083 test prompts) before sampling, and `--keep-all` turns this off.
+- By default the loader drops prompts whose OpenAI moderation score for sexual/minors is above 0.1 (21 of 5,083 test prompts) before sampling, and `--keep-all` turns this off. Results are on the filtered split, which removes about 5% of the toxic prompts (18 of the 21 dropped), likely among the easiest to catch, so catch rates may be a little lower than on the full split.
 - ToxicChat is licensed CC BY-NC 4.0. Results files store only an id, the repeat index, the probability, and the label. They never store prompt text.
 - Check each provider's terms before publishing results from its models. Jev results are ignored by git until those terms are confirmed.
