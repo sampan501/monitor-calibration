@@ -8,13 +8,13 @@ from datetime import date
 import numpy as np
 
 import scorers
-from data import load
+from data import DATASETS, load
 
 
 def build(a):
     """Return the scorer named on the command line."""
     if a.scorer == "baseline":
-        return scorers.Baseline()
+        return scorers.Baseline(a.dataset)
     if a.scorer == "hf":
         return scorers.HF(a.model, yes=a.yes, no=a.no, raw=a.raw, prefix=a.prefix)
     if a.scorer == "openai":
@@ -33,8 +33,8 @@ def done(path):
 
 
 def record(a, s):
-    """Add the run's model ID, scorer, mode, and first run date to results/models.json."""
-    path = os.path.join("results", "models.json")
+    """Add the run's model ID, scorer, mode, dataset, and first run date to models.json."""
+    path = os.path.join("results", a.dataset, "models.json")
     m = json.load(open(path)) if os.path.exists(path) else {}
     if a.name in m:
         return
@@ -44,14 +44,20 @@ def record(a, s):
     mode = {"baseline": "native", "hf": "token", "anthropic": "stated", "jev": "native"}.get(
         a.scorer, "token" if a.mode == "logprob" else "stated"
     )
-    m[a.name] = {"model": model, "scorer": a.scorer, "mode": mode, "date": str(date.today())}
+    m[a.name] = {
+        "model": model,
+        "scorer": a.scorer,
+        "mode": mode,
+        "dataset": a.dataset,
+        "date": str(date.today()),
+    }
     with open(path, "w") as f:
         json.dump(m, f, indent=2, sort_keys=True)
         f.write("\n")
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Score ToxicChat test prompts and append P(harmful) to results.")
+    ap = argparse.ArgumentParser(description="Score test prompts and append P(harmful) to results/<dataset>.")
     ap.add_argument("--scorer", required=True, choices=["baseline", "hf", "openai", "anthropic", "jev"])
     ap.add_argument("--name", required=True)
     ap.add_argument("--model")
@@ -62,7 +68,10 @@ def main():
     ap.add_argument("--no", nargs="+", default=["No", "no"])
     ap.add_argument("--raw", action="store_true")
     ap.add_argument("--prefix", default="")
-    ap.add_argument("--n", type=int, default=2000)
+    ap.add_argument("--dataset", default="toxicchat", choices=DATASETS)
+    ap.add_argument(
+        "--n", type=int, help="prompts to sample (default 2000 for toxicchat, all for wildguardtest)"
+    )
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--repeats", type=int, default=1)
     ap.add_argument("--workers", type=int, default=16, help="parallel requests for API scorers")
@@ -74,9 +83,11 @@ def main():
     if a.scorer in ("hf", "openai", "anthropic") and not a.model:
         ap.error("--model is required for --scorer {}".format(a.scorer))
 
-    ids, x, y = load("test", a.n, a.seed, a.keep_all)
-    os.makedirs("results", exist_ok=True)
-    path = os.path.join("results", "{}.jsonl".format(a.name))
+    if a.n is None and a.dataset == "toxicchat":
+        a.n = 2000
+    ids, x, y, extra = load("test", a.n, a.seed, a.keep_all, a.dataset)
+    os.makedirs(os.path.join("results", a.dataset), exist_ok=True)
+    path = os.path.join("results", a.dataset, "{}.jsonl".format(a.name))
     skip = done(path)
     s = build(a)
     todo = [(i, r) for i in range(len(ids)) for r in range(a.repeats) if (ids[i], r) not in skip]
@@ -99,6 +110,7 @@ def main():
             if np.isnan(p):
                 print("{} rep {}: no probability, recorded as a non-answer".format(ids[i], r))
                 rec = {"id": ids[i], "rep": r, "p": None, "refused": True, "y": int(y[i])}
+            rec.update(extra[i])
             f.write(json.dumps(rec) + "\n")
             f.flush()
 

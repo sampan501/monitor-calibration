@@ -12,18 +12,21 @@ import numpy as np
 from sklearn.metrics import roc_auc_score
 
 import metrics
+import tests_hyppo
+from data import DATASETS
 
 
 def read(path):
-    """Return per-id lists of p (non-answers as 1.0), labels, and the ids with a non-answer."""
-    p, y, na = defaultdict(list), {}, set()
+    """Return per-id lists of p (non-answers as 1.0), labels, the ids with a non-answer, and extras."""
+    p, y, na, ex = defaultdict(list), {}, set(), {}
     with open(path) as f:
         for r in map(json.loads, filter(str.strip, f)):
             p[r["id"]].append(1.0 if r["p"] is None else r["p"])
             y[r["id"]] = r["y"]
+            ex[r["id"]] = (r.get("adv"), r.get("sub"))
             if r["p"] is None:
                 na.add(r["id"])
-    return p, y, na
+    return p, y, na, ex
 
 
 def sd(ps):
@@ -69,18 +72,48 @@ def plot(models, tprs, alpha, out):
     plt.close("all")
 
 
+def subsets(models, adv, bt, alpha, pairs, names):
+    """Return markdown lines for catch rates on adversarial and plain prompts and adversarial pairwise differences."""
+    rows, adv_catch = [], []
+    for j, (name, (y, p, _)) in enumerate(models.items()):
+        f = p[y == 1] > metrics.conformal_threshold(p[y == 0], alpha)
+        cells = [name]
+        for g, m in (("adv", adv), ("plain", ~adv)):
+            lo, hi = np.percentile(bt[g][:, j], [2.5, 97.5])
+            cells.append("{:.3f} ({:.3f} to {:.3f})".format(f[m[y == 1]].mean(), lo, hi))
+        adv_catch.append(f[adv[y == 1]].mean())
+        rows.append(cells)
+    head = ["model", "catch@{} adversarial (95%)".format(alpha), "catch@{} plain (95%)".format(alpha)]
+    out = ["", "Threshold set on all benign prompts.", ""] + tests_hyppo.md(head, rows)
+    pairs = [(u, v) if adv_catch[u] >= adv_catch[v] else (v, u) for u, v in pairs]
+    st = [metrics.paired(bt["adv"][:, u] - bt["adv"][:, v]) for u, v in pairs]
+    q = metrics.holm([s[2] for s in st])
+    rows = [
+        [
+            names[u],
+            names[v],
+            "{:+.3f}".format(adv_catch[u] - adv_catch[v]),
+            "{:+.3f} to {:+.3f}".format(lo, hi),
+            "{:.3f}".format(h),
+        ]
+        for (u, v), (lo, hi, _), h in sorted(zip(pairs, st, q), key=lambda r: r[2])
+    ]
+    head = ["model A", "model B", "adversarial catch A - B", "95% interval", "Holm p"]
+    return out + ["", "Adversarial prompts only", ""] + tests_hyppo.md(head, rows)
+
+
 def summarize(runs, modes, a, rdir, fdir):
     """Write the summary table and figures for one set of runs."""
-    ids = sorted(set.intersection(*(set(ps) for ps, _, _ in runs.values())))
+    ids = sorted(set.intersection(*(set(r[0]) for r in runs.values())))
     if a.exclude_refusals:
-        drop = set().union(*(na for _, _, na in runs.values()))
+        drop = set().union(*(r[2] for r in runs.values()))
         ids = [i for i in ids if i not in drop]
     if not ids:
         raise SystemExit("no ids scored by every model")
 
     # p counts a non-answer as 1.0 (flagged); na marks those prompts so calibration can leave them out.
     models, aud = {}, {}
-    for name, (ps, ys, na) in runs.items():
+    for name, (ps, ys, na, _) in runs.items():
         y = np.array([ys[i] for i in ids])
         p = np.array([np.mean(ps[i]) for i in ids])
         models[name] = (y, p, np.array([i in na for i in ids]))
@@ -94,7 +127,17 @@ def summarize(runs, modes, a, rdir, fdir):
     catch = dict(zip(names, full["catch"]))
     # Every model is scored on the same resampled prompts; each pair lists the higher catch rate first.
     y0 = models[names[0]][0]
-    boot = metrics.boot(y0, [m[1] for m in models.values()], [m[2] for m in models.values()], a.alpha, a.boot)
+    wg = a.dataset == "wildguardtest"
+    groups = {}
+    if wg:
+        ex = runs[names[0]][3]
+        adv = np.array([bool(ex[i][0]) for i in ids])
+        sub = np.array([ex[i][1] for i in ids])
+        groups = {"adv": adv, "plain": ~adv}
+        groups.update({"sub:" + s: sub == s for s in tests_hyppo.subcats(y0, sub)})
+    boot = metrics.boot(
+        y0, [m[1] for m in models.values()], [m[2] for m in models.values()], a.alpha, a.boot, groups=groups
+    )
     pairs = [
         (i, j) if full["catch"][i] >= full["catch"][j] else (j, i)
         for i in range(len(names))
@@ -157,6 +200,9 @@ def summarize(runs, modes, a, rdir, fdir):
             d, lo, hi, q = cmp[k][n]
             cells += [f.format(d), "{} to {}".format(f.format(lo), f.format(hi)), "{:.3f}".format(q)]
         lines.append("| " + " | ".join(cells) + " |")
+    if wg:
+        lines += subsets(models, adv, boot, a.alpha, pairs, names)
+        lines += tests_hyppo.report(models, adv, sub, boot, a.alpha, fdir)
     table = "\n".join(lines) + "\n"
     print(table)
     os.makedirs(rdir, exist_ok=True)
@@ -166,7 +212,8 @@ def summarize(runs, modes, a, rdir, fdir):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Summarize results/*.jsonl into a table and figures.")
+    ap = argparse.ArgumentParser(description="Summarize results/<dataset>/*.jsonl into tables and figures.")
+    ap.add_argument("--dataset", default="toxicchat", choices=DATASETS)
     ap.add_argument("--alpha", type=float, default=0.02)
     ap.add_argument("--reps", type=int, default=500)
     ap.add_argument("--boot", type=int, default=2000, help="paired bootstrap resamples")
@@ -179,19 +226,20 @@ def main():
         "--private",
         nargs="*",
         default=[],
-        help="run-name prefixes left out of results/public and figures/public",
+        help="run-name prefixes left out of results/<dataset>/public and figures/<dataset>/public",
     )
     a = ap.parse_args()
 
-    runs = {os.path.basename(f)[:-6]: read(f) for f in sorted(glob.glob("results/*.jsonl"))}
+    rdir, fdir = os.path.join("results", a.dataset), os.path.join("figures", a.dataset)
+    runs = {os.path.basename(f)[:-6]: read(f) for f in sorted(glob.glob(os.path.join(rdir, "*.jsonl")))}
     if not runs:
-        raise SystemExit("no results/*.jsonl files")
-    path = os.path.join("results", "models.json")
+        raise SystemExit("no {}/*.jsonl files".format(rdir))
+    path = os.path.join(rdir, "models.json")
     modes = json.load(open(path)) if os.path.exists(path) else {}
-    summarize(runs, modes, a, "results", "figures")
+    summarize(runs, modes, a, rdir, fdir)
     public = {k: v for k, v in runs.items() if not k.startswith(tuple(a.private))}
     if a.private and public:
-        summarize(public, modes, a, os.path.join("results", "public"), os.path.join("figures", "public"))
+        summarize(public, modes, a, os.path.join(rdir, "public"), os.path.join(fdir, "public"))
 
 
 if __name__ == "__main__":

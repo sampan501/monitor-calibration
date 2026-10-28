@@ -10,3 +10,4 @@ accelerate
 openai
 anthropic
 typesafe-sdk
+hyppo
