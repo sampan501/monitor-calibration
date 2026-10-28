@@ -3,6 +3,7 @@ import codecs
 import json
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import date
 
 import numpy as np
 
@@ -29,6 +30,24 @@ def done(path):
         return set()
     with open(path) as f:
         return {(r["id"], r["rep"]) for r in map(json.loads, f) if r}
+
+
+def record(a, s):
+    """Add the run's model ID, scorer, mode, and first run date to results/models.json."""
+    path = os.path.join("results", "models.json")
+    m = json.load(open(path)) if os.path.exists(path) else {}
+    if a.name in m:
+        return
+    model = {"baseline": "tfidf-logreg", "jev": "jev-latest"}.get(a.scorer, a.model)
+    if a.scorer == "hf":
+        model += "@" + (getattr(s.m.config, "_commit_hash", None) or "unknown")[:7]
+    mode = {"baseline": "native", "hf": "token", "anthropic": "stated", "jev": "native"}.get(
+        a.scorer, "token" if a.mode == "logprob" else "stated"
+    )
+    m[a.name] = {"model": model, "scorer": a.scorer, "mode": mode, "date": str(date.today())}
+    with open(path, "w") as f:
+        json.dump(m, f, indent=2, sort_keys=True)
+        f.write("\n")
 
 
 def main():
@@ -61,7 +80,9 @@ def main():
     skip = done(path)
     s = build(a)
     todo = [(i, r) for i in range(len(ids)) for r in range(a.repeats) if (ids[i], r) not in skip]
-    # Local models share one device, so only API scorers run in parallel. Only this thread writes.
+    record(a, s)
+    # Local models share one device, so only API scorers run in parallel. Workers only score; this
+    # thread does every write, so lines can't interleave.
     workers = 1 if a.scorer in ("baseline", "hf") else a.workers
     with open(path, "a") as f, ThreadPoolExecutor(workers) as ex:
         jobs = {ex.submit(s.score, x[i]): (i, r) for i, r in todo}
@@ -74,10 +95,11 @@ def main():
             except Exception as e:
                 print("{} rep {}: {}".format(ids[i], r, e))
                 continue
+            rec = {"id": ids[i], "rep": r, "p": p, "y": int(y[i])}
             if np.isnan(p):
-                print("{} rep {}: nan".format(ids[i], r))
-                continue
-            f.write(json.dumps({"id": ids[i], "rep": r, "p": p, "y": int(y[i])}) + "\n")
+                print("{} rep {}: no probability, recorded as a non-answer".format(ids[i], r))
+                rec = {"id": ids[i], "rep": r, "p": None, "refused": True, "y": int(y[i])}
+            f.write(json.dumps(rec) + "\n")
             f.flush()
 
 

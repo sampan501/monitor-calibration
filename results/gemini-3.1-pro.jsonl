@@ -1997,3 +1997,4 @@
 {"id": "test-5076", "rep": 0, "p": 1.0, "y": 1}
 {"id": "test-4398", "rep": 0, "p": 0.0, "y": 0}
 {"id": "test-4490", "rep": 0, "p": 0.0, "y": 0}
+{"id": "test-34", "rep": 0, "p": null, "refused": true, "y": 1}

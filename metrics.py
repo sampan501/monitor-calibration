@@ -23,12 +23,15 @@ def brier(y, p):
     return np.mean((p - y) ** 2)
 
 
-def risk_coverage(y, p):
-    """Return coverage and cumulative error rate, most confident first."""
-    i = np.argsort(-np.maximum(p, 1 - p), kind="stable")
-    err = ((p >= 0.5).astype(int) != y)[i]
-    k = np.arange(1, len(y) + 1)
-    return k / len(y), np.cumsum(err) / k
+def risk_coverage(y, p, orders=50, seed=0):
+    """Return coverage and cumulative error rate, most confident first, averaged over random tie orders."""
+    rs = np.random.RandomState(seed)
+    n = len(y)
+    c = -np.maximum(p, 1 - p)
+    err = (p >= 0.5).astype(int) != y
+    k = np.arange(1, n + 1)
+    risk = np.mean([np.cumsum(err[np.lexsort((rs.rand(n), c))]) / k for _ in range(orders)], axis=0)
+    return k / n, risk
 
 
 def aurc(y, p):
@@ -56,6 +59,24 @@ def audit(y, p, alpha=0.02, reps=500, seed=0):
         f = p[b] > t
         tpr[r], fpr[r] = f[y[b] == 1].mean(), f[y[b] == 0].mean()
     return tpr, fpr
+
+
+def paired(t, ref):
+    """Return the 5th and 95th percentiles of t - ref over shared splits and a two-sided p-value."""
+    d = t - ref
+    lo, hi = np.percentile(d, [5, 95])
+    m = len(d)
+    p = 2 * min((1 + np.sum(d <= 0)) / (1 + m), (1 + np.sum(d >= 0)) / (1 + m))
+    return lo, hi, min(p, 1.0)
+
+
+def holm(p):
+    """Return Holm-adjusted p-values."""
+    p = np.asarray(p, dtype=float)
+    o = np.argsort(p)
+    adj = np.empty(len(p))
+    adj[o] = np.minimum(np.maximum.accumulate((len(p) - np.arange(len(p))) * p[o]), 1)
+    return adj
 
 
 def catch_rate(y, p, alpha):

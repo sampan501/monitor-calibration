@@ -107,7 +107,8 @@ class OpenAICompat:
             r = self.c.chat.completions.create(
                 model=self.model, messages=[{"role": "user", "content": ask_verbal(text)}], temperature=0
             )
-            return parse_prob(r.choices[0].message.content or "")
+            m = r.choices[0].message if r.choices else None  # Gemini can return a choice with no message
+            return parse_prob(m.content or "" if m else "")
         r = self.c.chat.completions.create(
             model=self.model,
             messages=[{"role": "user", "content": ask(text)}],
