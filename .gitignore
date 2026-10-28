@@ -3,7 +3,3 @@ __pycache__/
 .venv/
 .env
 .DS_Store
-results/jev*.jsonl
-# Versions that include Jev; the public ones are in results/public/ and figures/public/.
-results/summary.md
-figures/*.png

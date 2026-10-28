@@ -23,20 +23,22 @@ def brier(y, p):
     return np.mean((p - y) ** 2)
 
 
-def risk_coverage(y, p, orders=50, seed=0):
-    """Return coverage and cumulative error rate, most confident first, averaged over random tie orders."""
+def risk_coverage(y, p, last=None, orders=50, seed=0):
+    """Return coverage and error rate, most confident first and rows in last at the end, over random tie orders."""
     rs = np.random.RandomState(seed)
     n = len(y)
     c = -np.maximum(p, 1 - p)
+    if last is not None:
+        c = np.where(last, np.inf, c)
     err = (p >= 0.5).astype(int) != y
     k = np.arange(1, n + 1)
     risk = np.mean([np.cumsum(err[np.lexsort((rs.rand(n), c))]) / k for _ in range(orders)], axis=0)
     return k / n, risk
 
 
-def aurc(y, p):
+def aurc(y, p, last=None):
     """Return the area under the risk-coverage curve."""
-    return risk_coverage(y, p)[1].mean()
+    return risk_coverage(y, p, last)[1].mean()
 
 
 def conformal_threshold(s, alpha):
@@ -61,10 +63,21 @@ def audit(y, p, alpha=0.02, reps=500, seed=0):
     return tpr, fpr
 
 
-def paired(t, ref):
-    """Return the 5th and 95th percentiles of t - ref over shared splits and a two-sided p-value."""
-    d = t - ref
-    lo, hi = np.percentile(d, [5, 95])
+def boot_catch(y, ps, alpha, reps=2000, seed=0):
+    """Return catch rates of each model in ps over paired bootstrap resamples stratified by label."""
+    rs = np.random.RandomState(seed)
+    i1, i0 = np.flatnonzero(y == 1), np.flatnonzero(y == 0)
+    out = np.empty((reps, len(ps)))
+    for r in range(reps):
+        a, b = rs.choice(i1, len(i1)), rs.choice(i0, len(i0))
+        for j, p in enumerate(ps):
+            out[r, j] = np.mean(p[a] > conformal_threshold(p[b], alpha))
+    return out
+
+
+def paired(d):
+    """Return the 2.5 and 97.5 percentiles of bootstrap differences d and a two-sided p-value."""
+    lo, hi = np.percentile(d, [2.5, 97.5])
     m = len(d)
     p = 2 * min((1 + np.sum(d <= 0)) / (1 + m), (1 + np.sum(d >= 0)) / (1 + m))
     return lo, hi, min(p, 1.0)

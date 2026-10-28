@@ -37,19 +37,19 @@ def plot(models, tprs, alpha, out):
     os.makedirs(out, exist_ok=True)
     fig, ax = plt.subplots(figsize=(5, 5))
     ax.plot([0, 1], [0, 1], "k--", lw=1)
-    for i, (name, (y, p)) in enumerate(models.items()):
-        conf, obs, n = metrics.reliability(y, p)
+    for i, (name, (y, p, na)) in enumerate(models.items()):
+        conf, obs, n = metrics.reliability(y[~na], p[~na])
         k = n >= 10
         c = "C{}".format(i)
         ax.plot(conf[k], obs[k], "-", color=c, label=name)
-        ax.scatter(conf[k], obs[k], s=1000 * n[k] / len(y), color=c, alpha=0.6)
+        ax.scatter(conf[k], obs[k], s=1000 * n[k] / n.sum(), color=c, alpha=0.6)
     ax.set(xlabel="Mean confidence", ylabel="Observed toxic rate", xlim=(0, 1), ylim=(0, 1))
     ax.legend()
     fig.savefig(os.path.join(out, "reliability.png"), dpi=150, bbox_inches="tight")
 
     fig, ax = plt.subplots(figsize=(6, 4))
-    for name, (y, p) in models.items():
-        cov, risk = metrics.risk_coverage(y, p)
+    for name, (y, p, na) in models.items():
+        cov, risk = metrics.risk_coverage(y, p, na)
         k = cov >= 0.01
         ax.plot(cov[k], risk[k], label=name)
     ax.set(xlabel="Coverage", ylabel="Error rate", xlim=(0, 1), ylim=(0, 0.1))
@@ -78,18 +78,23 @@ def summarize(runs, modes, a, rdir, fdir):
     if not ids:
         raise SystemExit("no ids scored by every model")
 
+    # p counts a non-answer as 1.0 (flagged); na marks those prompts so calibration can leave them out.
     models, aud = {}, {}
-    for name, (ps, ys, _) in runs.items():
+    for name, (ps, ys, na) in runs.items():
         y = np.array([ys[i] for i in ids])
         p = np.array([np.mean(ps[i]) for i in ids])
-        models[name] = (y, p)
-        # Same seed and n for every model, so all models see the same half-splits.
+        models[name] = (y, p, np.array([i in na for i in ids]))
         aud[name] = metrics.audit(y, p, a.alpha, a.reps)
-    catch = {k: metrics.catch_rate(y, p, a.alpha) for k, (y, p) in models.items()}
-    best = max(catch, key=catch.get)
-    others = [k for k in models if k != best]
-    cmp = {k: metrics.paired(aud[k][0], aud[best][0]) for k in others}
-    adj = dict(zip(others, metrics.holm([cmp[k][2] for k in others]))) if others else {}
+    names = list(models)
+    catch = {k: metrics.catch_rate(y, p, a.alpha) for k, (y, p, _) in models.items()}
+    # Every model is scored on the same resampled prompts; each pair lists the higher catch rate first.
+    boot = metrics.boot_catch(models[names[0]][0], [models[k][1] for k in names], a.alpha, a.boot)
+    pairs = []
+    for i in range(len(names)):
+        for j in range(i + 1, len(names)):
+            u, v = (i, j) if catch[names[i]] >= catch[names[j]] else (j, i)
+            pairs.append((names[u], names[v]) + metrics.paired(boot[:, u] - boot[:, v]))
+    adj = metrics.holm([q[4] for q in pairs]) if pairs else []
 
     head = [
         "model",
@@ -104,34 +109,35 @@ def summarize(runs, modes, a, rdir, fdir):
         "catch@{}".format(a.alpha),
         "audit catch 5-95%",
         "share FPR>{}".format(a.alpha),
-        "diff vs best 5-95%",
-        "Holm p",
         "repeat SD",
     ]
     lines = ["| " + " | ".join(head) + " |", "|" + "---|" * len(head)]
-    for name, (y, p) in models.items():
-        ps, _, na = runs[name]
+    for name, (y, p, na) in models.items():
+        ps = runs[name][0]
         tpr, fpr = aud[name]
         lo, hi = np.percentile(tpr, [5, 95])
         s = sd([ps[i] for i in ids])
+        yk, pk = y[~na], p[~na]
         cells = [
             name,
             modes.get(name, {}).get("mode", "?"),
             "{} ({})".format(len(y), y.sum()),
-            str(len(na.intersection(ids))),
-            "{:.3f}".format(roc_auc_score(y, p)),
-            "{:.4f}".format(metrics.brier(y, p)),
-            "{:.4f}".format(metrics.ece(y, p)),
-            "{:.4f}".format(metrics.ece(y[y == 1], p[y == 1])),
-            "{:.4f}".format(metrics.aurc(y, p)),
+            str(na.sum()),
+            "{:.3f}".format(roc_auc_score(yk, pk)),
+            "{:.4f}".format(metrics.brier(yk, pk)),
+            "{:.4f}".format(metrics.ece(yk, pk)),
+            "{:.4f}".format(metrics.ece(yk[yk == 1], pk[yk == 1])),
+            "{:.4f}".format(metrics.aurc(y, p, na)),
             "{:.3f}".format(catch[name]),
             "{:.3f} to {:.3f}".format(lo, hi),
             "{:.3f}".format(np.mean(fpr > a.alpha)),
-            "reference" if name == best else "{:+.3f} to {:+.3f}".format(*cmp[name][:2]),
-            "" if name == best else "{:.3f}".format(adj[name]),
             "n/a" if np.isnan(s) else "{:.4f}".format(s),
         ]
         lines.append("| " + " | ".join(cells) + " |")
+    lines += ["", "| model A | model B | catch A - B | 95% interval | Holm p |", "|---|---|---|---|---|"]
+    for (m1, m2, lo, hi, _), q in sorted(zip(pairs, adj), key=lambda t: t[1]):
+        d = catch[m1] - catch[m2]
+        lines.append("| {} | {} | {:+.3f} | {:+.3f} to {:+.3f} | {:.3f} |".format(m1, m2, d, lo, hi, q))
     table = "\n".join(lines) + "\n"
     print(table)
     os.makedirs(rdir, exist_ok=True)
@@ -144,6 +150,7 @@ def main():
     ap = argparse.ArgumentParser(description="Summarize results/*.jsonl into a table and figures.")
     ap.add_argument("--alpha", type=float, default=0.02)
     ap.add_argument("--reps", type=int, default=500)
+    ap.add_argument("--boot", type=int, default=2000, help="paired bootstrap resamples")
     ap.add_argument(
         "--exclude-refusals",
         action="store_true",
@@ -152,7 +159,7 @@ def main():
     ap.add_argument(
         "--private",
         nargs="*",
-        default=["jev"],
+        default=[],
         help="run-name prefixes left out of results/public and figures/public",
     )
     a = ap.parse_args()
