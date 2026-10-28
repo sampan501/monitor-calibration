@@ -45,12 +45,15 @@ def main():
     ap.add_argument("--n", type=int, default=2000)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--repeats", type=int, default=1)
+    ap.add_argument(
+        "--keep-all", action="store_true", help="keep prompts with sexual/minors moderation > 0.1"
+    )
     a = ap.parse_args()
     a.prefix = codecs.decode(a.prefix, "unicode_escape")
     if a.scorer in ("hf", "openai", "anthropic") and not a.model:
         ap.error("--model is required for --scorer {}".format(a.scorer))
 
-    ids, x, y = load("test", a.n, a.seed)
+    ids, x, y = load("test", a.n, a.seed, a.keep_all)
     os.makedirs("results", exist_ok=True)
     path = os.path.join("results", "{}.jsonl".format(a.name))
     skip = done(path)

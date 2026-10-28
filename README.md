@@ -59,5 +59,6 @@ This reads every `results/*.jsonl` file, averages repeats per prompt, and keeps 
 - A stated probability and a token probability mean different things. A token probability comes from the model's output distribution, while a stated probability is text the model writes. The two can differ in calibration even for the same model.
 - With 2,000 prompts at about 7% prevalence, each half split has about 70 harmful prompts. That is why the held-out catch rate has a wide spread.
 - Split conformal thresholds control the false positive rate on average over splits, not on every split. Some splits will go over alpha, and the table reports how often.
+- By default the loader drops prompts whose OpenAI moderation score for sexual/minors is above 0.1 (21 of 5,083 test prompts) before sampling, and `--keep-all` turns this off.
 - ToxicChat is licensed CC BY-NC 4.0. Results files store only an id, the repeat index, the probability, and the label. They never store prompt text.
 - Check each provider's terms before publishing results from its models. Jev results are ignored by git until those terms are confirmed.
