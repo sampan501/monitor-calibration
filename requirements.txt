@@ -1,0 +1,12 @@
+numpy
+scikit-learn
+matplotlib
+datasets
+
+torch
+transformers
+accelerate
+
+openai
+anthropic
+typesafe-sdk
