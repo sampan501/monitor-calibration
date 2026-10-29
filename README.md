@@ -17,7 +17,7 @@ This repo checks how well different kinds of model report confidence on one safe
 - Brier score: how close are the probabilities to the labels on average?
 - ECE and the reliability plot: when the model says 0.8, are about 80% of those prompts harmful? The plot leaves out bins with fewer than 10 prompts, and marker area is proportional to bin count. ECE toxic is the same measure on the harmful prompts only, where it shows how far below 1 the model's confidence sits.
 - AURC and the risk-coverage plot: if the model abstains on its least confident prompts, how fast does the error rate on the rest fall? Prompts with equal confidence are put in random order, and the curve and AURC are averaged over 50 such orders.
-- Catch rate at alpha: if the threshold is set so that about alpha of benign prompts get flagged (the audit budget), what share of harmful prompts is flagged? The threshold is a split conformal quantile of benign scores.
+- Catch rate at alpha: if the threshold is set so that about alpha of benign prompts get flagged (the audit budget), what share of harmful prompts is flagged? The threshold is a split conformal quantile of benign scores, and a prompt is flagged when its score is strictly above it. The ties split column handles prompts tied at the threshold differently: it flags each tied prompt with the probability that brings the benign flag rate to exactly alpha, and reports the expected catch rate. The two columns differ only for models with many prompts at the threshold, which happens with coarse stated probabilities. The audit, bootstrap, and pairwise tables use the strict rule.
 - Audit catch rate spread: the 5th to 95th percentile of the held-out catch rate over 500 random half splits, where one half sets the threshold and the other half is scored.
 - Share of splits with FPR above alpha: how often the realized false positive rate on the held-out half goes over the budget.
 - Pairwise differences in catch rate, ECE, and Brier: a paired bootstrap over prompts. Each of 2,000 resamples draws the toxic and the benign prompts with replacement, separately, and uses the same drawn prompts for every model. Each model's 2% FPR conformal threshold is set again on the resampled benign prompts. ECE and Brier are computed on the resampled prompts each model answered. For every pair and each of the three measures, the second table gives the full-sample difference, the 2.5 to 97.5 percentile interval of the bootstrap differences, and a two-sided bootstrap p-value with Holm correction across the 15 pairs of that measure. Each measure is corrected on its own, not across all 45 comparisons together. With 2,000 resamples and 15 pairs the smallest possible Holm p-value is 0.015.
@@ -67,14 +67,14 @@ This reads every `results/<dataset>/*.jsonl` file (`--dataset toxicchat` by defa
 
 These results were run on 2026-10-28 on 2,000 prompts from the filtered test split, 145 of them toxic, with alpha = 0.02. The models are tfidf-logreg, Qwen/Qwen3.5-9B at commit c202236, gpt-5.4-2026-03-05, gemini-3.1-pro-preview, claude-opus-5-5, and jev-latest (released 2026-09-10).
 
-| model | mode | n (toxic) | non-answers | AUROC | Brier | ECE | ECE toxic | AURC | catch@0.02 | audit catch 5-95% | share FPR>0.02 | repeat SD |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| claude-opus-5.5 | stated | 2000 (145) | 17 | 0.988 | 0.0244 | 0.0232 | 0.3606 | 0.0020 | 0.683 | 0.548 to 0.774 | 0.430 | n/a |
-| gemini-3.1-pro | stated | 2000 (145) | 1 | 0.926 | 0.0282 | 0.0271 | 0.2232 | 0.0175 | 0.793 | 0.721 to 0.868 | 0.246 | n/a |
-| gpt-5.4 | stated | 2000 (145) | 0 | 0.974 | 0.0409 | 0.0331 | 0.1733 | 0.0106 | 0.600 | 0.442 to 0.681 | 0.228 | n/a |
-| jev | native | 2000 (145) | 0 | 0.982 | 0.0269 | 0.0187 | 0.3533 | 0.0023 | 0.710 | 0.627 to 0.807 | 0.468 | 0.0021 |
-| qwen3.5-9b | token | 2000 (145) | 0 | 0.959 | 0.0392 | 0.0195 | 0.5968 | 0.0053 | 0.531 | 0.413 to 0.606 | 0.460 | n/a |
-| tfidf-logreg | native | 2000 (145) | 0 | 0.912 | 0.0451 | 0.0480 | 0.7197 | 0.0125 | 0.566 | 0.479 to 0.641 | 0.430 | n/a |
+| model | mode | n (toxic) | non-answers | AUROC | Brier | ECE | ECE toxic | AURC | catch@0.02 | catch@0.02 ties split | audit catch 5-95% | share FPR>0.02 | repeat SD |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| claude-opus-5.5 | stated | 2000 (145) | 17 | 0.988 | 0.0244 | 0.0232 | 0.3606 | 0.0020 | 0.683 | 0.683 | 0.548 to 0.774 | 0.430 | n/a |
+| gemini-3.1-pro | stated | 2000 (145) | 1 | 0.926 | 0.0282 | 0.0271 | 0.2232 | 0.0175 | 0.793 | 0.821 | 0.721 to 0.868 | 0.246 | n/a |
+| gpt-5.4 | stated | 2000 (145) | 0 | 0.974 | 0.0409 | 0.0331 | 0.1733 | 0.0106 | 0.600 | 0.643 | 0.442 to 0.681 | 0.228 | n/a |
+| jev | native | 2000 (145) | 0 | 0.982 | 0.0269 | 0.0187 | 0.3533 | 0.0023 | 0.710 | 0.710 | 0.627 to 0.807 | 0.468 | 0.0021 |
+| qwen3.5-9b | token | 2000 (145) | 0 | 0.959 | 0.0392 | 0.0195 | 0.5968 | 0.0053 | 0.531 | 0.531 | 0.413 to 0.606 | 0.460 | n/a |
+| tfidf-logreg | native | 2000 (145) | 0 | 0.912 | 0.0451 | 0.0480 | 0.7197 | 0.0125 | 0.566 | 0.566 | 0.479 to 0.641 | 0.430 | n/a |
 
 | model A | model B | catch A - B | 95% interval | Holm p | ECE A - B | 95% interval | Holm p | Brier A - B | 95% interval | Holm p |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -104,7 +104,7 @@ The top models cannot be separated at this sample size. Gemini, Jev, and Claude 
 
 No model is clearly best calibrated. Jev has the lowest ECE (0.0187) and Claude the lowest Brier score (0.0244), but the bootstrap separates neither from the closest model: Jev against Qwen on ECE differs by -0.0008 (interval -0.0078 to +0.0091, Holm p = 1.000), and Jev against Claude on Brier by +0.0025 (interval -0.0016 to +0.0067, Holm p = 0.860). The clear calibration result is at the bottom: tfidf-logreg has a higher ECE than Gemini, Jev, Claude, and Qwen (Holm p at most 0.024).
 
-Stated probabilities are coarse. On the prompts each model answered, Gemini used 13 distinct values, GPT-5.4 used 21, and Claude used 40, against 177 for Jev and 955 for Qwen's token probabilities. Many prompts share the same score, which leaves the order within those groups to chance in AURC and puts the conformal threshold at a tie.
+Stated probabilities are coarse. On the prompts each model answered, Gemini used 13 distinct values, GPT-5.4 used 21, and Claude used 40, against 177 for Jev and 955 for Qwen's token probabilities. Many prompts share the same score, which leaves the order within those groups to chance in AURC and puts the conformal threshold at a tie. With prompts tied at the threshold split so that benign prompts are flagged at exactly 2%, Gemini's catch rate rises from 0.793 to 0.821 and GPT-5.4's from 0.600 to 0.643, and the other models do not change.
 
 Claude's 17 non-answers are refusals by the API (16 in the cyber category, 1 in general harms), and 11 of them are benign prompts. Counted as flags, the benign ones take up part of Claude's 2% benign budget: on the 1,982 prompts every model answered (`--exclude-refusals`), Claude's catch rate is 0.739 instead of 0.683. As abstentions they come last in its risk-coverage curve.
 
@@ -140,14 +140,14 @@ The hyppo tests use the default `auto=True`, so with more than 20 samples the p-
 
 These results were run on 2026-10-28 on all 1,670 prompts of the filtered test set, 734 of them harmful, with alpha = 0.02 and the same model IDs and modes as the ToxicChat runs. The full output, including the adversarial pairwise table and the hyppo tables, is in `results/wildguardtest/summary.md`.
 
-| model | mode | n (toxic) | non-answers | AUROC | Brier | ECE | ECE toxic | AURC | catch@0.02 | audit catch 5-95% | share FPR>0.02 | repeat SD |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| claude-opus-5.5 | stated | 1670 (734) | 127 | 0.938 | 0.0957 | 0.0291 | 0.2519 | 0.0477 | 0.522 | 0.411 to 0.618 | 0.374 | n/a |
-| gemini-3.1-pro | stated | 1670 (734) | 2 | 0.882 | 0.1226 | 0.1225 | 0.1811 | 0.1135 | 0.000 | 0.000 to 0.000 | 0.000 | n/a |
-| gpt-5.4 | stated | 1670 (734) | 0 | 0.935 | 0.1346 | 0.1229 | 0.0937 | 0.0589 | 0.278 | 0.251 to 0.306 | 0.000 | n/a |
-| jev | native | 1670 (734) | 0 | 0.956 | 0.0799 | 0.0239 | 0.2046 | 0.0292 | 0.680 | 0.644 to 0.728 | 0.394 | 0.0054 |
-| qwen3.5-9b | token | 1670 (734) | 0 | 0.936 | 0.1194 | 0.1172 | 0.3936 | 0.0639 | 0.501 | 0.382 to 0.634 | 0.414 | n/a |
-| tfidf-logreg | native | 1670 (734) | 0 | 0.879 | 0.1324 | 0.0324 | 0.3241 | 0.0867 | 0.470 | 0.381 to 0.527 | 0.368 | n/a |
+| model | mode | n (toxic) | non-answers | AUROC | Brier | ECE | ECE toxic | AURC | catch@0.02 | catch@0.02 ties split | audit catch 5-95% | share FPR>0.02 | repeat SD |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| claude-opus-5.5 | stated | 1670 (734) | 127 | 0.938 | 0.0957 | 0.0291 | 0.2519 | 0.0477 | 0.522 | 0.555 | 0.411 to 0.618 | 0.374 | n/a |
+| gemini-3.1-pro | stated | 1670 (734) | 2 | 0.882 | 0.1226 | 0.1225 | 0.1811 | 0.1135 | 0.000 | 0.238 | 0.000 to 0.000 | 0.000 | n/a |
+| gpt-5.4 | stated | 1670 (734) | 0 | 0.935 | 0.1346 | 0.1229 | 0.0937 | 0.0589 | 0.278 | 0.488 | 0.251 to 0.306 | 0.000 | n/a |
+| jev | native | 1670 (734) | 0 | 0.956 | 0.0799 | 0.0239 | 0.2046 | 0.0292 | 0.680 | 0.681 | 0.644 to 0.728 | 0.394 | 0.0054 |
+| qwen3.5-9b | token | 1670 (734) | 0 | 0.936 | 0.1194 | 0.1172 | 0.3936 | 0.0639 | 0.501 | 0.501 | 0.382 to 0.634 | 0.414 | n/a |
+| tfidf-logreg | native | 1670 (734) | 0 | 0.879 | 0.1324 | 0.0324 | 0.3241 | 0.0867 | 0.470 | 0.470 | 0.381 to 0.527 | 0.368 | n/a |
 
 | model A | model B | catch A - B | 95% interval | Holm p | ECE A - B | 95% interval | Holm p | Brier A - B | 95% interval | Holm p |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -172,7 +172,7 @@ These results were run on 2026-10-28 on all 1,670 prompts of the filtered test s
 ![Catch rate](figures/wildguardtest/catch_rate.png)
 ![Conditional miss](figures/wildguardtest/conditional_miss.png)
 
-Gemini and GPT-5.4 cannot use the 2% budget. Gemini states 1.0 for 6.4% of benign prompts and for 76% of harmful ones, so its threshold is 1.0 and nothing scores above it: its catch rate is 0.000 although its AUROC is 0.882. GPT-5.4 states 0.99 or higher for 4.3% of benign prompts, so its threshold is 0.99 and only the prompts it gives 1.0 are flagged, which catches 0.278 of harmful prompts at a realized FPR of 0.000. The pairwise rows involving these two models measure this tie effect more than the models' ranking. Gemini used 11 distinct values and GPT-5.4 used 19, against 42 for Claude, 301 for Jev, and one per prompt for Qwen and the baseline.
+Gemini and GPT-5.4 cannot use the 2% budget. Gemini states 1.0 for 6.4% of benign prompts and for 76% of harmful ones, so its threshold is 1.0 and nothing scores above it: its catch rate is 0.000 although its AUROC is 0.882. GPT-5.4 states 0.99 or higher for 4.3% of benign prompts, so its threshold is 0.99 and only the prompts it gives 1.0 are flagged, which catches 0.278 of harmful prompts at a realized FPR of 0.000. The pairwise rows involving these two models measure this tie effect more than the models' ranking. With ties at the threshold split so that benign prompts are flagged at exactly 2%, Gemini catches 0.238 and GPT-5.4 catches 0.488, still below Jev (0.681), Claude (0.555), and Qwen (0.501). Gemini used 11 distinct values and GPT-5.4 used 19, against 42 for Claude, 301 for Jev, and one per prompt for Qwen and the baseline.
 
 Jev has the highest catch rate (0.680), ahead of Claude by +0.158 (interval +0.054 to +0.271, Holm p = 0.015). Claude (0.522), Qwen (0.501), and the baseline (0.470) cannot be separated from each other (Holm p = 1.000 for all three pairs). Jev also has the lowest Brier score (0.0799), lower than every other model at Holm p = 0.015. On ECE, Jev (0.0239), Claude (0.0291), and the baseline (0.0324) cannot be separated, and all three are below Gemini, GPT-5.4, and Qwen, whose ECE is about 0.12.
 

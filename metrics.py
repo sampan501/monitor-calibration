@@ -127,6 +127,18 @@ def catch_rate(y, p, alpha):
     return np.mean(p[y == 1] > conformal_threshold(p[y == 0], alpha))
 
 
+def catch_split(y, p, alpha):
+    """Return the expected catch rate when prompts tied at the threshold are flagged with the probability
+    that brings the benign flag rate to alpha."""
+    b, h = p[y == 0], p[y == 1]
+    t = conformal_threshold(b, alpha)
+    if np.isinf(t):
+        return 0.0
+    tie = np.mean(b == t)
+    q = np.clip((alpha - np.mean(b > t)) / tie, 0, 1) if tie else 0.0
+    return np.mean(h > t) + q * np.mean(h == t)
+
+
 def perm_test(y, p, alpha, reps=1000, seed=0):
     """Return the permutation p-value for catch_rate against chance."""
     rs = np.random.RandomState(seed)
