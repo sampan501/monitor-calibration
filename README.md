@@ -136,7 +136,53 @@ A separate table describes how two monitors overlap at the operating point: for 
 
 The hyppo tests use the default `auto=True`, so with more than 20 samples the p-value comes from hyppo's chi-square approximation to the permutation null rather than from permutations. `reps=1000` and a fixed `random_state` are passed for the case of 20 or fewer samples.
 
-Results will be added after the runs.
+## WildGuardTest results
+
+These results were run on 2026-10-28 on all 1,670 prompts of the filtered test set, 734 of them harmful, with alpha = 0.02 and the same model IDs and modes as the ToxicChat runs. The full output, including the adversarial pairwise table and the hyppo tables, is in `results/wildguardtest/summary.md`.
+
+| model | mode | n (toxic) | non-answers | AUROC | Brier | ECE | ECE toxic | AURC | catch@0.02 | audit catch 5-95% | share FPR>0.02 | repeat SD |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| claude-opus-5.5 | stated | 1670 (734) | 127 | 0.938 | 0.0957 | 0.0291 | 0.2519 | 0.0477 | 0.522 | 0.411 to 0.618 | 0.374 | n/a |
+| gemini-3.1-pro | stated | 1670 (734) | 2 | 0.882 | 0.1226 | 0.1225 | 0.1811 | 0.1135 | 0.000 | 0.000 to 0.000 | 0.000 | n/a |
+| gpt-5.4 | stated | 1670 (734) | 0 | 0.935 | 0.1346 | 0.1229 | 0.0937 | 0.0589 | 0.278 | 0.251 to 0.306 | 0.000 | n/a |
+| jev | native | 1670 (734) | 0 | 0.956 | 0.0799 | 0.0239 | 0.2046 | 0.0292 | 0.680 | 0.644 to 0.728 | 0.394 | 0.0054 |
+| qwen3.5-9b | token | 1670 (734) | 0 | 0.936 | 0.1194 | 0.1172 | 0.3936 | 0.0639 | 0.501 | 0.382 to 0.634 | 0.414 | n/a |
+| tfidf-logreg | native | 1670 (734) | 0 | 0.879 | 0.1324 | 0.0324 | 0.3241 | 0.0867 | 0.470 | 0.381 to 0.527 | 0.368 | n/a |
+
+| model A | model B | catch A - B | 95% interval | Holm p | ECE A - B | 95% interval | Holm p | Brier A - B | 95% interval | Holm p |
+|---|---|---|---|---|---|---|---|---|---|---|
+| claude-opus-5.5 | gemini-3.1-pro | +0.522 | +0.405 to +0.632 | 0.015 | -0.0934 | -0.1043 to -0.0742 | 0.015 | -0.0269 | -0.0366 to -0.0173 | 0.015 |
+| claude-opus-5.5 | gpt-5.4 | +0.244 | +0.131 to +0.353 | 0.015 | -0.0937 | -0.1075 to -0.0729 | 0.015 | -0.0389 | -0.0507 to -0.0275 | 0.015 |
+| gpt-5.4 | gemini-3.1-pro | +0.278 | +0.245 to +0.311 | 0.015 | +0.0004 | -0.0143 to +0.0163 | 1.000 | +0.0120 | -0.0022 to +0.0266 | 0.368 |
+| jev | claude-opus-5.5 | +0.158 | +0.054 to +0.271 | 0.015 | -0.0052 | -0.0179 to +0.0109 | 1.000 | -0.0158 | -0.0224 to -0.0094 | 0.015 |
+| jev | gemini-3.1-pro | +0.680 | +0.629 to +0.737 | 0.015 | -0.0985 | -0.1103 to -0.0747 | 0.015 | -0.0427 | -0.0533 to -0.0321 | 0.015 |
+| jev | gpt-5.4 | +0.402 | +0.351 to +0.462 | 0.015 | -0.0989 | -0.1118 to -0.0754 | 0.015 | -0.0548 | -0.0665 to -0.0435 | 0.015 |
+| qwen3.5-9b | gemini-3.1-pro | +0.501 | +0.375 to +0.651 | 0.015 | -0.0053 | -0.0220 to +0.0106 | 1.000 | -0.0032 | -0.0152 to +0.0082 | 1.000 |
+| qwen3.5-9b | gpt-5.4 | +0.223 | +0.097 to +0.372 | 0.015 | -0.0057 | -0.0255 to +0.0137 | 1.000 | -0.0152 | -0.0291 to -0.0020 | 0.145 |
+| jev | qwen3.5-9b | +0.178 | +0.059 to +0.305 | 0.015 | -0.0933 | -0.0977 to -0.0748 | 0.015 | -0.0396 | -0.0459 to -0.0335 | 0.015 |
+| tfidf-logreg | gemini-3.1-pro | +0.470 | +0.376 to +0.533 | 0.015 | -0.0901 | -0.1031 to -0.0650 | 0.015 | +0.0098 | -0.0050 to +0.0243 | 0.564 |
+| tfidf-logreg | gpt-5.4 | +0.192 | +0.094 to +0.255 | 0.015 | -0.0904 | -0.1044 to -0.0640 | 0.015 | -0.0022 | -0.0173 to +0.0129 | 1.000 |
+| jev | tfidf-logreg | +0.210 | +0.147 to +0.308 | 0.015 | -0.0085 | -0.0235 to +0.0060 | 1.000 | -0.0526 | -0.0619 to -0.0431 | 0.015 |
+| claude-opus-5.5 | qwen3.5-9b | +0.020 | -0.169 to +0.198 | 1.000 | -0.0881 | -0.0959 to -0.0700 | 0.015 | -0.0238 | -0.0321 to -0.0155 | 0.015 |
+| claude-opus-5.5 | tfidf-logreg | +0.052 | -0.071 to +0.185 | 1.000 | -0.0033 | -0.0214 to +0.0120 | 1.000 | -0.0368 | -0.0465 to -0.0268 | 0.015 |
+| qwen3.5-9b | tfidf-logreg | +0.031 | -0.098 to +0.196 | 1.000 | +0.0848 | +0.0642 to +0.0923 | 0.015 | -0.0130 | -0.0226 to -0.0032 | 0.054 |
+
+![Reliability](figures/wildguardtest/reliability.png)
+![Risk-coverage](figures/wildguardtest/risk_coverage.png)
+![Catch rate](figures/wildguardtest/catch_rate.png)
+![Conditional miss](figures/wildguardtest/conditional_miss.png)
+
+Gemini and GPT-5.4 cannot use the 2% budget. Gemini states 1.0 for 6.4% of benign prompts and for 76% of harmful ones, so its threshold is 1.0 and nothing scores above it: its catch rate is 0.000 although its AUROC is 0.882. GPT-5.4 states 0.99 or higher for 4.3% of benign prompts, so its threshold is 0.99 and only the prompts it gives 1.0 are flagged, which catches 0.278 of harmful prompts at a realized FPR of 0.000. The pairwise rows involving these two models measure this tie effect more than the models' ranking. Gemini used 11 distinct values and GPT-5.4 used 19, against 42 for Claude, 301 for Jev, and one per prompt for Qwen and the baseline.
+
+Jev has the highest catch rate (0.680), ahead of Claude by +0.158 (interval +0.054 to +0.271, Holm p = 0.015). Claude (0.522), Qwen (0.501), and the baseline (0.470) cannot be separated from each other (Holm p = 1.000 for all three pairs). Jev also has the lowest Brier score (0.0799), lower than every other model at Holm p = 0.015. On ECE, Jev (0.0239), Claude (0.0291), and the baseline (0.0324) cannot be separated, and all three are below Gemini, GPT-5.4, and Qwen, whose ECE is about 0.12.
+
+Nearly all false positives are adversarial benign prompts. Of the 936 benign prompts, 450 are adversarial. At each model's threshold, the false positive rate on adversarial benign prompts is 0.038 for Claude, 0.036 for Jev and Qwen, and 0.029 for the baseline, against 0.000, 0.002, 0.002, and 0.008 on plain benign prompts. The jailbreak-style wording of a harmless request spends most of the audit budget. On harmful prompts the split is smaller: catch rates on adversarial and plain prompts differ by at most 0.04 for Claude, Jev, and Qwen, while GPT-5.4 (0.135 against 0.392) and the baseline (0.399 against 0.527) catch fewer adversarial prompts.
+
+Every model scores harmful prompts differently across subcategories (Dcorr k-sample, Holm p < 0.001 for all six). Private information about individuals has the lowest catch rate for Claude (0.198), Jev (0.309), and Qwen (0.160). GPT-5.4 catches none of the 31 copyright prompts, and the baseline catches 0.071 of the 98 prompts labeled "others", where Claude, GPT-5.4, Jev, and Qwen catch 0.418 to 0.724.
+
+Misses overlap. When Jev misses a harmful prompt, Claude also misses it 0.932 of the time and Qwen 0.923, against overall miss rates of 0.478 and 0.499. When Claude misses, Jev misses 0.624 of the time, against its overall 0.320. These are descriptions at one operating point and do not test whether a second monitor adds information.
+
+Claude returned no probability for 127 prompts, 120 of them harmful (60 adversarial, 60 plain) and 7 benign, all adversarial. Counted as flags, the 7 benign ones take up about 0.007 of Claude's 0.02 benign budget.
 
 ## Notes
 

@@ -1,4 +1,11 @@
 {
+  "claude-opus-5.5": {
+    "dataset": "wildguardtest",
+    "date": "2026-10-28",
+    "mode": "stated",
+    "model": "claude-opus-5-5",
+    "scorer": "anthropic"
+  },
   "gemini-3.1-pro": {
     "dataset": "wildguardtest",
     "date": "2026-10-28",
@@ -13,11 +20,18 @@
     "model": "gpt-5.4-2026-03-05",
     "scorer": "openai"
   },
+  "jev": {
+    "dataset": "wildguardtest",
+    "date": "2026-10-28",
+    "mode": "native",
+    "model": "jev-latest",
+    "scorer": "jev"
+  },
   "qwen3.5-9b": {
     "dataset": "wildguardtest",
     "date": "2026-10-28",
     "mode": "token",
-    "model": "Qwen/Qwen3.5-9B@unknown",
+    "model": "Qwen/Qwen3.5-9B@c202236",
     "scorer": "hf"
   },
   "tfidf-logreg": {
