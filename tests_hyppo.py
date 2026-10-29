@@ -58,7 +58,8 @@ def report(models, adv, sub, bt, alpha, fdir):
     y = next(iter(models.values()))[0]
     h = y == 1
     keep = subcats(y, sub)
-    flags = [p > metrics.conformal_threshold(p[~h], alpha) for _, p, _ in models.values()]
+    # Expected flags under the randomized rule at the threshold set on all benign prompts.
+    flags = [metrics.flag_prob(p[~h], p, alpha) for _, p, _ in models.values()]
 
     out = ["", "Do harmful prompts in different subcategories get different scores? (Dcorr k-sample)", ""]
     ps = [ksample(*(p[h & (sub == s)] for s in keep)) for _, p, _ in models.values()]
@@ -101,7 +102,7 @@ def report(models, adv, sub, bt, alpha, fdir):
     out += md(["model A", "model B", "Holm p"], rows)
 
     # Descriptive overlap at each model's own threshold, not a test.
-    miss = metrics.cond_miss([~f[h] for f in flags])
+    miss = metrics.cond_miss([1 - f[h] for f in flags])
     out += [
         "",
         "P(B misses | A misses) on harmful prompts at each model's own threshold, 95% bootstrap interval",

@@ -42,11 +42,24 @@ def aurc(y, p, last=None):
 
 
 def conformal_threshold(s, alpha):
-    """Return the split conformal threshold on benign scores s; flag scores above it."""
+    """Return the split conformal threshold on benign scores s; the strict rule flags scores above it."""
     s = np.sort(s)
     n = len(s)
     k = int(np.ceil((n + 1) * (1 - alpha)))
     return np.inf if k > n else s[k - 1]
+
+
+def flag_prob(cal, s, alpha):
+    """Return the randomized conformal flag probability of each score in s against benign scores cal.
+
+    With a calibration scores above s and b equal to it, s is flagged with probability
+    clip((alpha (n + 1) - a) / (b + 1), 0, 1). The probability is used as the expected flag, with no draw.
+    """
+    cal = np.sort(cal)
+    n = len(cal)
+    a = n - np.searchsorted(cal, s, "right")
+    b = n - np.searchsorted(cal, s, "left") - a
+    return np.clip((alpha * (n + 1) - a) / (b + 1), 0, 1)
 
 
 def audit(y, p, alpha=0.02, reps=500, seed=0):
@@ -57,8 +70,7 @@ def audit(y, p, alpha=0.02, reps=500, seed=0):
     for r in range(reps):
         i = rs.permutation(n)
         a, b = i[: n // 2], i[n // 2 :]
-        t = conformal_threshold(p[a][y[a] == 0], alpha)
-        f = p[b] > t
+        f = flag_prob(p[a][y[a] == 0], p[b], alpha)
         tpr[r], fpr[r] = f[y[b] == 1].mean(), f[y[b] == 0].mean()
     return tpr, fpr
 
@@ -84,14 +96,13 @@ def boot(y, ps, nas, alpha, reps=2000, seed=0, groups=None):
         i = np.concatenate([a, b])
         miss = np.empty((len(ps), len(a)))
         for j, (p, na) in enumerate(zip(ps, nas)):
-            t = conformal_threshold(p[b], alpha)
-            f = p[a] > t
-            miss[j] = ~f
+            f = flag_prob(p[b], p[a], alpha)
+            miss[j] = 1 - f
             out["catch"][r, j] = f.mean()
             for g, m in groups.items():
                 out[g][r, j] = f[m[a]].mean()
             for g in fprs:
-                out["fpr:" + g][r, j] = np.mean(p[b][groups[g][b]] > t)
+                out["fpr:" + g][r, j] = flag_prob(p[b], p[b][groups[g][b]], alpha).mean()
             k = i[~na[i]]  # calibration leaves out non-answers
             out["ece"][r, j], out["brier"][r, j] = ece(y[k], p[k]), brier(y[k], p[k])
         out["miss"][r] = cond_miss(miss)
@@ -99,7 +110,7 @@ def boot(y, ps, nas, alpha, reps=2000, seed=0, groups=None):
 
 
 def cond_miss(miss):
-    """Return P(B misses | A misses) for boolean miss rows of each model, indexed [A, B]."""
+    """Return P(B misses | A misses) for miss rows (expected misses) of each model, indexed [A, B]."""
     miss = np.asarray(miss, dtype=float)
     with np.errstate(invalid="ignore", divide="ignore"):
         return (miss @ miss.T) / miss.sum(1)[:, None]
@@ -123,20 +134,13 @@ def holm(p):
 
 
 def catch_rate(y, p, alpha):
-    """Return the share of harmful prompts above the threshold set on all benign scores."""
+    """Return the expected share of harmful prompts flagged by the randomized rule on all benign scores."""
+    return flag_prob(p[y == 0], p[y == 1], alpha).mean()
+
+
+def catch_strict(y, p, alpha):
+    """Return the share of harmful prompts strictly above the threshold set on all benign scores."""
     return np.mean(p[y == 1] > conformal_threshold(p[y == 0], alpha))
-
-
-def catch_split(y, p, alpha):
-    """Return the expected catch rate when prompts tied at the threshold are flagged with the probability
-    that brings the benign flag rate to alpha."""
-    b, h = p[y == 0], p[y == 1]
-    t = conformal_threshold(b, alpha)
-    if np.isinf(t):
-        return 0.0
-    tie = np.mean(b == t)
-    q = np.clip((alpha - np.mean(b > t)) / tie, 0, 1) if tie else 0.0
-    return np.mean(h > t) + q * np.mean(h == t)
 
 
 def perm_test(y, p, alpha, reps=1000, seed=0):
@@ -145,3 +149,19 @@ def perm_test(y, p, alpha, reps=1000, seed=0):
     obs = catch_rate(y, p, alpha)
     null = np.array([catch_rate(rs.permutation(y), p, alpha) for _ in range(reps)])
     return (1 + np.sum(null >= obs)) / (1 + reps)
+
+
+if __name__ == "__main__":
+    # Coarse tied scores, 6% of benign at the top value: the mean held-out FPR must stay at or below alpha.
+    rs = np.random.RandomState(0)
+    alpha, reps = 0.02, 4000
+    vals, w = np.array([0.0, 0.1, 0.5, 0.9, 1.0]), [0.7, 0.15, 0.06, 0.03, 0.06]
+    for n in (50, 200, 1000):
+        fr, fs = np.empty(reps), np.empty(reps)
+        for r in range(reps):
+            cal, test = rs.choice(vals, n, p=w), rs.choice(vals, 500, p=w)
+            fr[r] = flag_prob(cal, test, alpha).mean()
+            fs[r] = np.mean(test > conformal_threshold(cal, alpha))
+        se = fr.std() / np.sqrt(reps)
+        print("n={}: randomized FPR {:.4f} (se {:.4f}), strict {:.4f}".format(n, fr.mean(), se, fs.mean()))
+        assert fr.mean() <= alpha + 3 * se and fs.mean() <= alpha
