@@ -41,6 +41,13 @@ class Baseline:
         from data import load
 
         _, x, y, _ = load("train", dataset=dataset)
+        if dataset == "wildguardtest":
+            # Drop train rows whose prompt matches any labeled test prompt after normalizing case and whitespace.
+            norm = lambda s: " ".join(s.lower().split())
+            test = set(map(norm, load("test", dataset=dataset, keep_all=True)[1]))
+            k = [i for i, s in enumerate(x) if norm(s) not in test]
+            print("dropped {} train rows that match a test prompt".format(len(x) - len(k)))
+            x, y = [x[i] for i in k], y[k]
         self.m = make_pipeline(
             TfidfVectorizer(ngram_range=(1, 2), min_df=2, sublinear_tf=True),
             LogisticRegression(max_iter=1000),

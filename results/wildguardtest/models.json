@@ -1,4 +1,25 @@
 {
+  "gemini-3.1-pro": {
+    "dataset": "wildguardtest",
+    "date": "2026-10-28",
+    "mode": "stated",
+    "model": "gemini-3.1-pro-preview",
+    "scorer": "openai"
+  },
+  "gpt-5.4": {
+    "dataset": "wildguardtest",
+    "date": "2026-10-28",
+    "mode": "stated",
+    "model": "gpt-5.4-2026-03-05",
+    "scorer": "openai"
+  },
+  "qwen3.5-9b": {
+    "dataset": "wildguardtest",
+    "date": "2026-10-28",
+    "mode": "token",
+    "model": "Qwen/Qwen3.5-9B@unknown",
+    "scorer": "hf"
+  },
   "tfidf-logreg": {
     "dataset": "wildguardtest",
     "date": "2026-10-28",

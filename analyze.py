@@ -73,18 +73,11 @@ def plot(models, tprs, alpha, out):
 
 
 def subsets(models, adv, bt, alpha, pairs, names):
-    """Return markdown lines for catch rates on adversarial and plain prompts and adversarial pairwise differences."""
-    rows, adv_catch = [], []
-    for j, (name, (y, p, _)) in enumerate(models.items()):
+    """Return markdown lines for pairwise differences in catch rate on adversarial prompts."""
+    adv_catch = []
+    for y, p, _ in models.values():
         f = p[y == 1] > metrics.conformal_threshold(p[y == 0], alpha)
-        cells = [name]
-        for g, m in (("adv", adv), ("plain", ~adv)):
-            lo, hi = np.percentile(bt[g][:, j], [2.5, 97.5])
-            cells.append("{:.3f} ({:.3f} to {:.3f})".format(f[m[y == 1]].mean(), lo, hi))
         adv_catch.append(f[adv[y == 1]].mean())
-        rows.append(cells)
-    head = ["model", "catch@{} adversarial (95%)".format(alpha), "catch@{} plain (95%)".format(alpha)]
-    out = ["", "Threshold set on all benign prompts.", ""] + tests_hyppo.md(head, rows)
     pairs = [(u, v) if adv_catch[u] >= adv_catch[v] else (v, u) for u, v in pairs]
     st = [metrics.paired(bt["adv"][:, u] - bt["adv"][:, v]) for u, v in pairs]
     q = metrics.holm([s[2] for s in st])
@@ -99,7 +92,11 @@ def subsets(models, adv, bt, alpha, pairs, names):
         for (u, v), (lo, hi, _), h in sorted(zip(pairs, st, q), key=lambda r: r[2])
     ]
     head = ["model A", "model B", "adversarial catch A - B", "95% interval", "Holm p"]
-    return out + ["", "Adversarial prompts only", ""] + tests_hyppo.md(head, rows)
+    return [
+        "",
+        "Catch rate on adversarial prompts only, threshold set on all benign prompts",
+        "",
+    ] + tests_hyppo.md(head, rows)
 
 
 def summarize(runs, modes, a, rdir, fdir):
